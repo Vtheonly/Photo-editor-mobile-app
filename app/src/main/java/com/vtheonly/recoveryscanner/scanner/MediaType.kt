@@ -12,5 +12,14 @@ data class ScanResult(
     val confidence: Int,
     val isExtensionMismatch: Boolean,
     val isEmbeddedCandidate: Boolean = false,
-    val offset: Long = 0L
+    val offset: Long = 0L,
+    val recoveredLength: Long = 0L,
+    val quality: RecoveryQuality = RecoveryQuality.SIGNATURE_ONLY
 )
+
+enum class RecoveryQuality {
+    VALID,
+    LIKELY_RECOVERABLE,
+    PARTIAL_OR_CORRUPT,
+    SIGNATURE_ONLY
+}
