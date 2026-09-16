@@ -60,12 +60,16 @@ object Formats {
         out.write(byteArrayOf(0xFF.toByte(), if (corruptMarker) 0xC8.toByte() else 0xDB.toByte())) // DQT
         out.write(u16(67)); out.write(ByteArray(65) { (it * 3 + 1).toByte() })
         out.write(byteArrayOf(0xFF.toByte(), 0xC4.toByte()))                       // DHT
-        out.write(u16(6 + 16)); out.write(byteArrayOf(0x00)); out.write(ByteArray(16) { 1 })
+        out.write(u16(1 + 16 + 2)); out.write(byteArrayOf(0x00)); out.write(ByteArray(16) { 1 })
+        val sofContent = byteArrayOf(
+            8, 0x01, 0xE0.toByte(), 0x02, 0x80.toByte(), 3,
+            1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1
+        )
         out.write(byteArrayOf(0xFF.toByte(), if (progressive) 0xC2.toByte() else 0xC0.toByte())) // SOF
-        out.write(u16(17)); out.write(byteArrayOf(8, 0x01, 0xE0.toByte(), 0x02, 0x80.toByte(), 3))
-        out.write(byteArrayOf(1, 0x11, 1, 0, 0x02, 0x11, 1, 1, 0x03, 0x11, 1, 1))
+        out.write(u16(sofContent.size + 2)); out.write(sofContent)
+        val sosContent = byteArrayOf(3, 1, 0x00, 2, 0x11, 3, 0x11, 0, 63, 0)
         out.write(byteArrayOf(0xFF.toByte(), 0xDA.toByte()))                       // SOS
-        out.write(u16(12)); out.write(byteArrayOf(1, 0x01, 0x00, 0x00, 3, 1, 0x11, 1, 0x00, 0x3F, 0x00))
+        out.write(u16(sosContent.size + 2)); out.write(sosContent)
         out.write(noise(entropyBytes))
         if (includeEoi) out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
         return out.toByteArray()
@@ -135,7 +139,7 @@ object Formats {
         out.write(ascii(version))
         out.write(u16(200)); out.write(u16(150))                                 // logical screen 200x150
         out.write(byteArrayOf((if (gct) 0x80 or 0x07 else 0x07).toByte(), 0, 0))  // packed, bg, aspect
-        if (gct) out.write(ByteArray(2 * 3 * 8) { (it * 5 and 0xFF).toByte() })
+        if (gct) out.write(ByteArray(256 * 3) { (it * 5 and 0xFF).toByte() })      // 256-entry GCT (packed 0x87)
         if (bogusExtension) {
             out.write(byteArrayOf(0x21, 0xFE.toByte()))                          // comment ext with bad sub-block
             out.write(byteArrayOf(5)); out.write(ascii("hello"))
