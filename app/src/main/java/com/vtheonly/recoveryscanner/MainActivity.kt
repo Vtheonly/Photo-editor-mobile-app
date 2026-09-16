@@ -49,10 +49,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 28, 32, 24)
         }
-        root.addView(TextView(this).apply {
-            text = "Recovery Scanner"
-            textSize = 28f
-        }, match())
+        root.addView(TextView(this).apply { text = "Recovery Scanner"; textSize = 28f }, match())
         root.addView(TextView(this).apply {
             text = "Deep no-root media recovery over storage Android exposes to the app."
             textSize = 14f
@@ -61,7 +58,7 @@ class MainActivity : Activity() {
 
         chooseFolder = Button(this).apply { text = "Normal scan: selected folder"; setOnClickListener { chooseScanFolder(false) } }
         deepScan = Button(this).apply { text = "Deep scan: every byte"; setOnClickListener { chooseScanFolder(true) } }
-        scanMedia = Button(this).apply { text = "Deep scan: MediaStore"; setOnClickListener { requestMediaPermissionAndScan() } }
+        scanMedia = Button(this).apply { text = "Deep scan: MediaStore images + videos"; setOnClickListener { requestMediaPermissionAndScan() } }
         recover = Button(this).apply { text = "Recover selected"; isEnabled = false; setOnClickListener { chooseRecoveryFolder() } }
         root.addView(chooseFolder, match())
         root.addView(deepScan, match())
@@ -97,15 +94,20 @@ class MainActivity : Activity() {
     }
 
     private fun requestMediaPermissionAndScan() {
-        val permission = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
-        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) scanMediaStore()
-        else ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_PERMISSION)
+        val permissions = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) scanMediaStore()
+        else ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSION)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_PERMISSION && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) scanMediaStore()
-        else if (requestCode == REQUEST_PERMISSION) Toast.makeText(this, "Media permission is required for MediaStore scanning.", Toast.LENGTH_LONG).show()
+        if (requestCode == REQUEST_PERMISSION && grantResults.any { it == PackageManager.PERMISSION_GRANTED }) scanMediaStore()
+        else if (requestCode == REQUEST_PERMISSION) Toast.makeText(this, "Media permissions are required for MediaStore scanning.", Toast.LENGTH_LONG).show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -143,7 +145,7 @@ class MainActivity : Activity() {
     }
 
     private fun scanMediaStore() {
-        setBusy(true, "Scanning MediaStore entries...")
+        setBusy(true, "Scanning MediaStore images and videos...")
         scope.launch {
             val scanner = StorageScanner(this@MainActivity)
             results = scanner.scanMediaStore { progress -> status.text = "Checked ${progress.files} indexed entries" }
@@ -171,8 +173,8 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 12, 0, 12)
                 setOnCheckedChangeListener { _, checked ->
-                    if (checked) selected["${result.sourceUri}:${result.offset}:${result.detectedType}"] = result
-                    else selected.remove("${result.sourceUri}:${result.offset}:${result.detectedType}")
+                    val key = "${result.sourceUri}:${result.offset}:${result.detectedType}"
+                    if (checked) selected[key] = result else selected.remove(key)
                     recover.isEnabled = selected.isNotEmpty()
                 }
             }, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
