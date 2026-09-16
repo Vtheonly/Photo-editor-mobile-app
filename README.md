@@ -1,44 +1,38 @@
-# Recovery Scanner
+# Android Recovery Scanner
 
-An Android no-root media recovery assistant that inspects storage the operating system allows the app to read.
+A no-root Android media recovery scanner focused on **content rather than filenames**.
 
-## What this version does
+## Scan modes
 
-- Recursively scans a user-selected folder through the Storage Access Framework.
-- Scans Android MediaStore when media permissions are granted.
-- Ignores filename extensions when identifying content.
-- Detects JPEG, PNG, GIF, WebP, BMP, HEIC and common ISO-BMFF video containers.
-- Flags extension/content mismatches such as `photo.bin` containing JPEG bytes.
-- Detects JPEG/PNG signatures embedded inside accessible files during the initial content window.
-- Lets the user select candidates and writes recovered copies to a separately chosen destination.
-- Performs all scanning and copying off the main thread and supports coroutine cancellation.
+### Normal scan
+Reads accessible files selected through Android's Storage Access Framework and checks their headers.
 
-## Important limitation
+### Deep scan
+Reads the **entire byte stream** of every accessible file and searches for media signatures anywhere inside the file. This can find:
 
-This is **Version A: no root**. A normal Android application cannot read the raw blocks of internal UFS/eMMC storage, deleted directory entries, filesystem slack, or TRIMmed/garbage-collected blocks. Therefore this application cannot perform the same physical deleted-block carving as PhotoRec against a raw disk image.
+- renamed images such as `photo.bin`
+- files with missing/wrong extensions
+- JPEG/PNG data embedded inside another accessible file
+- media appended to otherwise unrelated files
+- MP4/MOV/3GP/HEIC ISO-BMFF headers at non-zero offsets
+- GIF/BMP/WebP signatures that are not reflected by the filename
 
-The app deliberately does not claim to recover data that Android does not expose. On an unrooted phone, its deepest useful scope is accessible files, MediaStore records, and content inside files the user explicitly grants through SAF.
+Deep scanning uses a rolling overlap between chunks so signatures crossing a 1 MiB read boundary are not missed.
 
-## Recovery safety
+## Recovery
 
-Recovered files are written to a user-selected destination rather than overwriting the source. For important recovery attempts, avoid installing large applications, recording new media, factory-resetting, flashing firmware, unlocking the bootloader, or otherwise writing substantial new data to the device.
+Recovered files are written to a **user-selected destination**, not back into the scanned source. Embedded JPEG and PNG candidates are carved from their detected offset using their format terminators.
 
-## Project layout
+## MediaStore
 
-```text
-app/src/main/java/com/vtheonly/recoveryscanner/
-├── MainActivity.kt
-└── scanner/
-    ├── MediaType.kt
-    ├── SignatureRegistry.kt
-    ├── StorageScanner.kt
-    └── RecoveryWriter.kt
-```
+The scanner can inspect Android's indexed media collection and reads both image and video permissions on Android 13+.
 
-## Build
+## What this app deliberately does not claim
 
-The repository includes a GitHub Actions debug-build workflow. Locally, use Gradle 8.9 with JDK 17 and run `gradle :app:assembleDebug`.
+This is not raw flash-storage forensic recovery. An ordinary unrooted Android application cannot read the physical UFS/eMMC block device or arbitrary deleted blocks. Android storage encryption, TRIM/garbage collection, filesystem state, and device permissions can make deleted data unavailable even when the user remembers it existed.
 
-## Future extensions
+The app therefore searches **everything it is actually allowed to read**, as deeply as practical, rather than pretending that a normal app can bypass Android's storage security model.
 
-The architecture can later add stronger container validation, JPEG/PNG boundary validation, EXIF recovery, thumbnail discovery, MediaStore-vs-filesystem discrepancy reports, resumable scans, previews, duplicate detection, and optional privileged/forensic acquisition as a separate capability. Those additions must not be represented as raw deleted-storage recovery when Android does not expose the underlying blocks.
+## Important recovery practice
+
+Do not save recovered files into the same source location. Writing new data can overwrite recoverable content. For important evidence, stop using the device and use a proper forensic acquisition workflow instead.
