@@ -2,12 +2,10 @@ package com.vtheonly.recoveryscanner.scanner
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import java.io.InputStream
+import kotlin.coroutines.coroutineContext
 
 class StorageScanner(private val context: Context) {
     suspend fun scanTree(
@@ -20,7 +18,7 @@ class StorageScanner(private val context: Context) {
         var bytes = 0L
 
         suspend fun visit(node: DocumentFile) {
-            ensureActive()
+            coroutineContext.ensureActive()
             if (node.isDirectory) {
                 node.listFiles().forEach { visit(it) }
                 return
@@ -41,8 +39,7 @@ class StorageScanner(private val context: Context) {
                         originalExtension = originalExt,
                         sizeBytes = size,
                         confidence = detection.confidence,
-                        isExtensionMismatch = originalExt.isNotEmpty() &&
-                            originalExt != detection.extension,
+                        isExtensionMismatch = originalExt.isNotEmpty() && originalExt != detection.extension,
                         isEmbeddedCandidate = detection.offset > 0,
                         offset = detection.offset
                     )
@@ -65,16 +62,16 @@ class StorageScanner(private val context: Context) {
         val projection = arrayOf(
             android.provider.MediaStore.Files.FileColumns._ID,
             android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME,
-            android.provider.MediaStore.Files.FileColumns.SIZE,
-            android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE
+            android.provider.MediaStore.Files.FileColumns.SIZE
         )
         val collection = android.provider.MediaStore.Files.getContentUri("external")
         context.contentResolver.query(collection, projection, null, null, null)?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns._ID)
             val nameCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.DISPLAY_NAME)
             val sizeCol = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Files.FileColumns.SIZE)
+            var checked = 0L
             while (cursor.moveToNext()) {
-                ensureActive()
+                coroutineContext.ensureActive()
                 val id = cursor.getLong(idCol)
                 val name = cursor.getString(nameCol) ?: "unknown"
                 val uri = Uri.withAppendedPath(collection, id.toString())
@@ -90,15 +87,15 @@ class StorageScanner(private val context: Context) {
                         )
                     }
                 }
-                if (results.size % 20 == 0) onProgress(ScannedProgress(results.size.toLong(), results.sumOf { it.sizeBytes }))
+                checked++
+                if (checked % 20L == 0L) onProgress(ScannedProgress(checked, results.sumOf { it.sizeBytes }))
             }
         }
         onProgress(ScannedProgress(results.size.toLong(), results.sumOf { it.sizeBytes }, true))
         results
     }
 
-    private fun extension(name: String): String =
-        name.substringAfterLast('.', "").lowercase()
+    private fun extension(name: String): String = name.substringAfterLast('.', "").lowercase()
 }
 
 data class ScannedProgress(
