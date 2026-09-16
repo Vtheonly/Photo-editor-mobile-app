@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.vtheonly.recoveryscanner.scanner.DeepContentScanner
 import com.vtheonly.recoveryscanner.scanner.RecoveryWriter
 import com.vtheonly.recoveryscanner.scanner.ScanResult
 import com.vtheonly.recoveryscanner.scanner.StorageScanner
@@ -31,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var resultContainer: LinearLayout
     private lateinit var chooseFolder: Button
+    private lateinit var deepScan: Button
     private lateinit var scanMedia: Button
     private lateinit var recover: Button
     private val selected = linkedMapOf<String, ScanResult>()
@@ -50,23 +52,24 @@ class MainActivity : Activity() {
         root.addView(TextView(this).apply {
             text = "Recovery Scanner"
             textSize = 28f
-            setTextColor(0xFF172027.toInt())
         }, match())
         root.addView(TextView(this).apply {
-            text = "Content-based media discovery for accessible storage. This app does not access raw deleted blocks."
+            text = "Deep no-root media recovery over storage Android exposes to the app."
             textSize = 14f
             setPadding(0, 8, 0, 20)
         }, match())
 
-        chooseFolder = Button(this).apply { text = "Choose folder and scan"; setOnClickListener { chooseScanFolder() } }
-        scanMedia = Button(this).apply { text = "Scan MediaStore"; setOnClickListener { requestMediaPermissionAndScan() } }
+        chooseFolder = Button(this).apply { text = "Normal scan: selected folder"; setOnClickListener { chooseScanFolder(false) } }
+        deepScan = Button(this).apply { text = "Deep scan: every byte"; setOnClickListener { chooseScanFolder(true) } }
+        scanMedia = Button(this).apply { text = "Deep scan: MediaStore"; setOnClickListener { requestMediaPermissionAndScan() } }
         recover = Button(this).apply { text = "Recover selected"; isEnabled = false; setOnClickListener { chooseRecoveryFolder() } }
         root.addView(chooseFolder, match())
+        root.addView(deepScan, match())
         root.addView(scanMedia, match())
         root.addView(recover, match())
 
         status = TextView(this).apply {
-            text = "Choose a folder to inspect arbitrary files, or scan MediaStore for indexed media."
+            text = "Deep scan reads the complete content of every accessible file and searches inside it for media signatures."
             textSize = 14f
             setPadding(0, 18, 0, 14)
         }
@@ -79,8 +82,8 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun chooseScanFolder() {
-        pendingFolderAction = ACTION_SCAN_FOLDER
+    private fun chooseScanFolder(deep: Boolean) {
+        pendingFolderAction = if (deep) ACTION_DEEP_SCAN else ACTION_SCAN_FOLDER
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }, REQUEST_TREE)
@@ -94,21 +97,15 @@ class MainActivity : Activity() {
     }
 
     private fun requestMediaPermissionAndScan() {
-        val permissions = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-        val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
-        if (missing.isEmpty()) scanMediaStore() else ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSION)
+        val permission = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) scanMediaStore()
+        else ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_PERMISSION)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQUEST_PERMISSION) return
-        val allGranted = permissions.indices.all { grantResults.getOrNull(it) == PackageManager.PERMISSION_GRANTED }
-        if (allGranted) scanMediaStore()
-        else Toast.makeText(this, "Media permissions are required for MediaStore scanning.", Toast.LENGTH_LONG).show()
+        if (requestCode == REQUEST_PERMISSION && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) scanMediaStore()
+        else if (requestCode == REQUEST_PERMISSION) Toast.makeText(this, "Media permission is required for MediaStore scanning.", Toast.LENGTH_LONG).show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -116,7 +113,11 @@ class MainActivity : Activity() {
         if (requestCode != REQUEST_TREE || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: SecurityException) {}
-        if (pendingFolderAction == ACTION_SCAN_FOLDER) scanFolder(uri) else recoverSelected(uri)
+        when (pendingFolderAction) {
+            ACTION_SCAN_FOLDER -> scanFolder(uri)
+            ACTION_DEEP_SCAN -> deepScanFolder(uri)
+            ACTION_RECOVER -> recoverSelected(uri)
+        }
     }
 
     private fun scanFolder(uri: Uri) {
@@ -125,17 +126,29 @@ class MainActivity : Activity() {
             val scanner = StorageScanner(this@MainActivity)
             results = scanner.scanTree(uri) { progress -> status.text = "Scanned ${progress.files} files (${formatBytes(progress.bytes)})" }
             renderResults()
-            setBusy(false, "Found ${results.size} media candidates.")
+            setBusy(false, "Normal scan found ${results.size} candidates.")
+        }
+    }
+
+    private fun deepScanFolder(uri: Uri) {
+        setBusy(true, "Deep scan started: reading every accessible byte...")
+        scope.launch {
+            val scanner = DeepContentScanner(this@MainActivity)
+            results = scanner.scanTree(uri) { progress ->
+                status.text = "Deep-scanned ${progress.files} files • ${formatBytes(progress.bytes)} • ${progress.candidates} candidates"
+            }
+            renderResults()
+            setBusy(false, "Deep scan complete: ${results.size} candidates found.")
         }
     }
 
     private fun scanMediaStore() {
-        setBusy(true, "Scanning MediaStore...")
+        setBusy(true, "Scanning MediaStore entries...")
         scope.launch {
             val scanner = StorageScanner(this@MainActivity)
-            results = scanner.scanMediaStore { progress -> status.text = "Checked ${progress.files} entries" }
+            results = scanner.scanMediaStore { progress -> status.text = "Checked ${progress.files} indexed entries" }
             renderResults()
-            setBusy(false, "Found ${results.size} media candidates.")
+            setBusy(false, "MediaStore scan found ${results.size} candidates.")
         }
     }
 
@@ -148,37 +161,36 @@ class MainActivity : Activity() {
             return
         }
         results.forEachIndexed { index, result ->
-            val row = CheckBox(this).apply {
+            resultContainer.addView(CheckBox(this).apply {
                 text = buildString {
                     append(result.sourceName)
-                    append("\nDetected: ${result.detectedExtension.uppercase()}  •  ${formatBytes(result.sizeBytes)}  •  ${result.confidence}%")
-                    if (result.isExtensionMismatch) append("\nExtension mismatch")
-                    if (result.isEmbeddedCandidate) append("\nEmbedded media candidate at byte ${result.offset}")
+                    append("\nDetected: ${result.detectedExtension.uppercase()} • ${formatBytes(result.sizeBytes)} • ${result.confidence}%")
+                    if (result.offset > 0) append("\nEmbedded candidate at byte ${result.offset}")
+                    if (result.isExtensionMismatch) append("\nFilename extension does not match content")
                 }
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, 12, 0, 12)
                 setOnCheckedChangeListener { _, checked ->
-                    if (checked) selected[result.sourceUri] = result else selected.remove(result.sourceUri)
+                    if (checked) selected["${result.sourceUri}:${result.offset}:${result.detectedType}"] = result
+                    else selected.remove("${result.sourceUri}:${result.offset}:${result.detectedType}")
                     recover.isEnabled = selected.isNotEmpty()
                 }
-            }
-            resultContainer.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
             if (index != results.lastIndex) resultContainer.addView(TextView(this).apply {
-                setPadding(0, 0, 0, 1)
-                setBackgroundColor(0xFFE0E0E0.toInt())
+                setPadding(0, 0, 0, 1); setBackgroundColor(0xFFE0E0E0.toInt())
             }, matchHeight())
         }
     }
 
     private fun recoverSelected(destination: Uri) {
         val items = selected.values.toList()
-        setBusy(true, "Recovering ${items.size} selected file(s)...")
+        setBusy(true, "Recovering ${items.size} selected candidate(s)...")
         scope.launch(Dispatchers.IO) {
             val writer = RecoveryWriter(this@MainActivity)
             var success = 0
             items.forEach { if (writer.recover(it, destination) != null) success++ }
             withContext(Dispatchers.Main) {
-                setBusy(false, "Recovered $success/${items.size}. Files were written to the chosen destination.")
+                setBusy(false, "Recovered $success/${items.size}. Output was written to the chosen destination.")
                 selected.clear()
                 recover.isEnabled = false
             }
@@ -187,6 +199,7 @@ class MainActivity : Activity() {
 
     private fun setBusy(busy: Boolean, message: String) {
         chooseFolder.isEnabled = !busy
+        deepScan.isEnabled = !busy
         scanMedia.isEnabled = !busy
         recover.isEnabled = !busy && selected.isNotEmpty()
         status.text = message
@@ -211,6 +224,7 @@ class MainActivity : Activity() {
         private const val REQUEST_TREE = 1001
         private const val REQUEST_PERMISSION = 1002
         private const val ACTION_SCAN_FOLDER = 1
-        private const val ACTION_RECOVER = 2
+        private const val ACTION_DEEP_SCAN = 2
+        private const val ACTION_RECOVER = 3
     }
 }
