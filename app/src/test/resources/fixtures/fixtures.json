@@ -28,8 +28,8 @@
     "size": 20483
   },
   "jpeg_exif.jpg": {
-    "sha256": "d53d5047d8e095ce48369dae6cacb14d5b763fb8b6b835a2ead90496e61ddca9",
-    "size": 20571
+    "sha256": "98574a150112128863b9cf48c46a609c045271b7d790a7f6a389084e907efaf5",
+    "size": 20589
   },
   "jpeg_large.jpg": {
     "sha256": "4b83274e6c45d40250dcd58c0b18fbf37cb8f238265bfe1e307287e5cef35578",
@@ -80,11 +80,11 @@
     "size": 2138
   },
   "video.mkv": {
-    "sha256": "e48efe9fbccbc8e618233a176d27ff74ae6e7b3fcec1bc729be37de32c11a9e1",
+    "sha256": "42302bcbe7de30dc2c8686d7294ffaa57866246ed79cc2723c84d16325d21636",
     "size": 11815
   },
   "video.webm": {
-    "sha256": "02cc45deac32c3f1fb8ca78f470fb165bf9a154a57d4341fc271cbfe9b659d16",
+    "sha256": "d3860ae088d2d3f155bb9876d58559c2f556a59e8f45e09bee6f785cff6f0d15",
     "size": 39322
   },
   "video_3gp.3gp": {
@@ -96,8 +96,8 @@
     "size": 15700
   },
   "webp_extended.webp": {
-    "sha256": "b3f010767afa381e8ede9563f2e5825648167ec1032976bcb4ebf187611724c3",
-    "size": 17092
+    "sha256": "0eb58e137f8cdf6de8876c867178d1581963fa8351fec4081dbd57fd442a5862",
+    "size": 17110
   },
   "webp_lossless.webp": {
     "sha256": "360bbe19bdb3ee72fb9562c39bbe9d74f8d1e66098cb72bb638275ee17bf85bf",

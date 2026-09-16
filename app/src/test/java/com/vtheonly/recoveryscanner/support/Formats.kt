@@ -75,20 +75,20 @@ object Formats {
         return out.toByteArray()
     }
 
-    /** Minimal TIFF/EXIF with IFD0 -> ExifIFD -> DateTimeOriginal. */
+    /** Minimal little-endian TIFF/EXIF with IFD0 -> ExifIFD -> DateTimeOriginal. */
     private fun exifTiff(dateTimeOriginal: String): ByteArray {
         val dt = (dateTimeOriginal + "\u0000").toByteArray(Charsets.US_ASCII)
-        val dtPad = dt.size + (dt.size % 2)                                   // ASCII counts are odd-friendly; keep as-is
-        val entryExif = byteArrayOf(0x87.toByte(), 0x69.toByte(), 0x00, 0x04, 1, 0, 0, 0) + u32(26) // ExifIFD ptr -> offset 26
-        val ifd0 = u16(1) + entryExif + u32(0)
-        val entryDto = byteArrayOf(0x90.toByte(), 0x03.toByte(), 0x00, 0x02) +
-            le32(dt.size.toLong()) + le32((26 + ifd0.size + 2 + 12 + 4).toLong())  // count, value-offset (patched below)
-        val exifIfd = u16(1) + entryDto + u32(0)
-        val dataStart = 8 + ifd0.size + exifIfd.size
+        val entryExif = byteArrayOf(0x69.toByte(), 0x87.toByte(), 0x04, 0x00) +
+            le32(1) + le32(26)                                                       // ExifIFD ptr -> offset 26
+        val ifd0 = le16(1) + entryExif + le32(0)                                     // 2 + 12 + 4 = 18
+        val dataStart = 8 + ifd0.size + 18                                           // where dt bytes begin
+        val entryDto = byteArrayOf(0x03.toByte(), 0x90.toByte(), 0x02, 0x00) +
+            le32(dt.size.toLong()) + le32(dataStart.toLong())                        // count, value-offset
+        val exifIfd = le16(1) + entryDto + le32(0)                                   // 18 bytes
         val out = ByteArrayOutputStream()
         out.write(ascii("II")); out.write(byteArrayOf(0x2A, 0x00)); out.write(le32(8))
         out.write(ifd0); out.write(exifIfd)
-        out.write(dt); if (dtPad > dt.size) out.write(ByteArray(dtPad - dt.size))
+        out.write(dt)
         return out.toByteArray()
     }
 
