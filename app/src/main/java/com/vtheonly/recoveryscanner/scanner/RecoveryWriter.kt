@@ -4,60 +4,58 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.io.BufferedInputStream
-import java.io.OutputStream
 
 class RecoveryWriter(private val context: Context) {
     fun recover(result: ScanResult, destinationTree: Uri): Uri? {
+        if (result.quality == RecoveryQuality.SIGNATURE_ONLY) return null
         val destination = DocumentFile.fromTreeUri(context, destinationTree) ?: return null
         val source = Uri.parse(result.sourceUri)
         val base = result.sourceName.substringBeforeLast('.', result.sourceName)
         val filename = "$base.recovered.${result.detectedExtension}"
         val output = destination.createFile(mime(result.detectedType), uniqueName(destination, filename)) ?: return null
 
-        context.contentResolver.openInputStream(source)?.use { input ->
-            context.contentResolver.openOutputStream(output.uri)?.use { out ->
-                if (result.isEmbeddedCandidate) {
-                    copyEmbedded(input, out, result.detectedType, result.offset)
-                } else {
-                    input.copyTo(out, DEFAULT_BUFFER)
+        try {
+            context.contentResolver.openInputStream(source)?.use { raw ->
+                BufferedInputStream(raw, DEFAULT_BUFFER).use { input ->
+                    context.contentResolver.openOutputStream(output.uri)?.use { out ->
+                        if (!skipFully(input, result.offset)) return null
+                        val limit = result.recoveredLength.takeIf { it > 0 } ?: Long.MAX_VALUE
+                        copyExactly(input, out, limit)
+                    }
                 }
-            }
+            } ?: return null
+            return output.uri
+        } catch (_: Exception) {
+            output.delete()
+            return null
         }
-        return output.uri
     }
 
-    private fun copyEmbedded(input: java.io.InputStream, out: OutputStream, type: MediaType, offset: Long) {
-        var skipped = 0L
-        while (skipped < offset) {
-            val n = input.skip(offset - skipped)
-            if (n <= 0) return
-            skipped += n
+    private fun copyExactly(input: java.io.InputStream, out: java.io.OutputStream, maxBytes: Long): Long {
+        val buffer = ByteArray(DEFAULT_BUFFER)
+        var remaining = maxBytes
+        var copied = 0L
+        while (remaining > 0) {
+            val want = minOf(buffer.size.toLong(), remaining).toInt()
+            val n = input.read(buffer, 0, want)
+            if (n < 0) break
+            if (n == 0) continue
+            out.write(buffer, 0, n)
+            copied += n
+            remaining -= n
         }
-        if (type == MediaType.JPEG) {
-            val buffered = BufferedInputStream(input, DEFAULT_BUFFER)
-            out.write(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))
-            var previous = -1
-            while (true) {
-                val current = buffered.read()
-                if (current < 0) break
-                out.write(current)
-                if (previous == 0xFF && current == 0xD9) break
-                previous = current
-            }
-        } else if (type == MediaType.PNG) {
-            val marker = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
-            out.write(marker)
-            val tail = byteArrayOf(0x49, 0x45, 0x4E, 0x44, 0xAE.toByte(), 0x42, 0x60, 0x82)
-            var matched = 0
-            while (matched < tail.size) {
-                val b = input.read()
-                if (b < 0) break
-                out.write(b)
-                matched = if (b == (tail[matched].toInt() and 0xFF)) matched + 1 else 0
-            }
-        } else {
-            input.copyTo(out, DEFAULT_BUFFER)
+        return copied
+    }
+
+    private fun skipFully(input: java.io.InputStream, bytes: Long): Boolean {
+        var remaining = bytes
+        while (remaining > 0) {
+            val skipped = input.skip(remaining)
+            if (skipped > 0) { remaining -= skipped; continue }
+            if (input.read() < 0) return false
+            remaining--
         }
+        return true
     }
 
     private fun uniqueName(parent: DocumentFile, desired: String): String {
