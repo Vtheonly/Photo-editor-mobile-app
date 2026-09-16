@@ -1,6 +1,6 @@
 package com.vtheonly.recoveryscanner.scanner
 
-enum class MediaType { JPEG, PNG, GIF, WEBP, BMP, HEIC, MP4, MOV, THREE_GP, UNKNOWN }
+enum class MediaType { JPEG, PNG, GIF, WEBP, BMP, HEIC, MP4, MOV, THREE_GP, MKV, WEBM, UNKNOWN }
 
 data class ScanResult(
     val sourceName: String,
@@ -17,9 +17,4 @@ data class ScanResult(
     val quality: RecoveryQuality = RecoveryQuality.SIGNATURE_ONLY
 )
 
-enum class RecoveryQuality {
-    VALID,
-    LIKELY_RECOVERABLE,
-    PARTIAL_OR_CORRUPT,
-    SIGNATURE_ONLY
-}
+enum class RecoveryQuality { VALID, LIKELY_RECOVERABLE, PARTIAL_OR_CORRUPT, SIGNATURE_ONLY }
