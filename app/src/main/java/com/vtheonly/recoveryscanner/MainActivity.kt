@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -95,18 +94,21 @@ class MainActivity : Activity() {
     }
 
     private fun requestMediaPermissionAndScan() {
-        val permission = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
-        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
-            scanMediaStore()
+        val permissions = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
         } else {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_PERMISSION)
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
+        val missing = permissions.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) scanMediaStore() else ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSION)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_PERMISSION && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) scanMediaStore()
-        else if (requestCode == REQUEST_PERMISSION) Toast.makeText(this, "Media permission is required for MediaStore scanning.", Toast.LENGTH_LONG).show()
+        if (requestCode != REQUEST_PERMISSION) return
+        val allGranted = permissions.indices.all { grantResults.getOrNull(it) == PackageManager.PERMISSION_GRANTED }
+        if (allGranted) scanMediaStore()
+        else Toast.makeText(this, "Media permissions are required for MediaStore scanning.", Toast.LENGTH_LONG).show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -121,9 +123,7 @@ class MainActivity : Activity() {
         setBusy(true, "Scanning selected folder...")
         scope.launch {
             val scanner = StorageScanner(this@MainActivity)
-            results = scanner.scanTree(uri) { progress ->
-                status.text = "Scanned ${progress.files} files (${formatBytes(progress.bytes)})"
-            }
+            results = scanner.scanTree(uri) { progress -> status.text = "Scanned ${progress.files} files (${formatBytes(progress.bytes)})" }
             renderResults()
             setBusy(false, "Found ${results.size} media candidates.")
         }
@@ -133,9 +133,7 @@ class MainActivity : Activity() {
         setBusy(true, "Scanning MediaStore...")
         scope.launch {
             val scanner = StorageScanner(this@MainActivity)
-            results = scanner.scanMediaStore { progress ->
-                status.text = "Checked ${progress.files} entries"
-            }
+            results = scanner.scanMediaStore { progress -> status.text = "Checked ${progress.files} entries" }
             renderResults()
             setBusy(false, "Found ${results.size} media candidates.")
         }
@@ -165,7 +163,10 @@ class MainActivity : Activity() {
                 }
             }
             resultContainer.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT))
-            if (index != results.lastIndex) resultContainer.addView(TextView(this).apply { setPadding(0, 0, 0, 1); setBackgroundColor(0xFFE0E0E0.toInt()) }, matchHeight())
+            if (index != results.lastIndex) resultContainer.addView(TextView(this).apply {
+                setPadding(0, 0, 0, 1)
+                setBackgroundColor(0xFFE0E0E0.toInt())
+            }, matchHeight())
         }
     }
 
