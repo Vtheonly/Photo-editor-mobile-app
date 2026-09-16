@@ -1,9 +1,25 @@
+# Build outputs
+build/
+app/build/
+.gradle/
+*/build/
+
+# Local configuration (SDK paths are machine-specific)
+local.properties
+
+# IDE
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea
+captures/
+.navigation/
+
+# Native build artifacts
+.externalNativeBuild/
+.cxx/
+
+# OS
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+
+# Test/coverage output
+*.exec
+jacoco.exec
