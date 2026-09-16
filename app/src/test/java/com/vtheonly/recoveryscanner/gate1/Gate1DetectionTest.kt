@@ -180,6 +180,24 @@ class Gate1DetectionTest {
         assertEquals(setOf("a.jpg", "b.png", "c.gif"), results.map { it.sourceName }.toSet())
     }
 
+    @Test
+    fun `section28 doc - normal scan results are SIGNATURE_ONLY and can never be recovered`() = runBlocking {
+        // CONFIRMED DEFECT (D-07): StorageScanner builds ScanResult without recoveredLength
+        // or quality, so every normal-scan candidate defaults to SIGNATURE_ONLY. The UI
+        // disables those checkboxes and RecoveryWriter refuses SIGNATURE_ONLY results:
+        // the normal scan can list files but the user can never recover any of them.
+        val dir = createTempDir("deadend").apply { deleteOnExit() }
+        File(dir, "photo.jpg").writeBytes(Formats.jpeg(64))
+        val results = StorageScanner(context).scanTree(SAF.install(dir)) { }
+        assertEquals(1, results.size)
+        assertEquals(com.vtheonly.recoveryscanner.scanner.RecoveryQuality.SIGNATURE_ONLY, results[0].quality)
+        val dest = createTempDir("dest7").apply { deleteOnExit() }
+        val out = com.vtheonly.recoveryscanner.scanner.RecoveryWriter(context)
+            .recover(results[0], SAF.install(dest))
+        assertTrue("normal-scan candidate must be recoverable in principle, writer returned $out", out == null)
+        assertEquals(0, dest.listFiles()!!.size)
+    }
+
     // ------------------------------------------------------------ gap documentation (asserting current behavior)
 
     @Test
